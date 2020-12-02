@@ -33,7 +33,7 @@ func (c *SubClient) run(res chan *SubResults, subDone chan bool, jobDone chan bo
 
 	opts := mqtt.NewClientOptions().
 		AddBroker(c.BrokerURL).
-		SetClientID(fmt.Sprintf("mqtt-benchmark-%v-%v", time.Now(), c.ID)).
+		SetClientID(fmt.Sprintf("mqtt-benchmark-%v", c.ID)).
 		SetCleanSession(true).
 		SetAutoReconnect(true).
 		SetKeepAlive(ka).
