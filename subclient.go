@@ -19,7 +19,7 @@ type SubClient struct {
 	BrokerPass string
 	SubTopic   string
 	SubQoS     byte
-        KeepAlive  int
+    KeepAlive  int
 	Quiet      bool
 }
 
