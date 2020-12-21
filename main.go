@@ -96,6 +96,10 @@ type RunData struct {
 	MessageSize     int
 	MessageCount    int
 
+	// settings
+	Mode  string
+	Aware bool
+
 	//output
 	Throughput        float64
 	TotalRunTime      float64
@@ -127,27 +131,44 @@ func main() {
 		//keepalive = flag.Int("keepalive", 60, "Keep alive period in seconds")
 		//format    = flag.String("format", "csv", "Output format: text|json")
 		//quiet     = flag.Bool("quiet", false, "Suppress logs while running")
+		aware = flag.Bool("pbac", true, "use purposes")
 	)
 
 	flag.Parse()
 
+	time.Sleep(time.Second * 1)
+
 	var testSet = time.Now().Format("2006_01_02__15_04_05")
-	var clients = []int{1, 5, 10, 25, 50, 100}
+	var clients = []int{1,10,25,50} // , 5, 10, 25, 50, 100}
 
-	runs := make([]RunData, len(clients))
+	var riTemplate = RunData{
+		TestSet: testSet,
+		Server:  *broker,
+		//NumberOfClients: ci,
+		SubQoS:       *subqos,
+		PubQoS:       *pubqos,
+		MessageSize:  *size,
+		MessageCount: *count,
+		Aware:        *aware,
+	}
 
-	for i, ci := range clients {
-		var ri = RunData{
-			TestSet:         testSet,
-			Server:          *broker,
-			NumberOfClients: ci,
-			SubQoS:          *subqos,
-			PubQoS:          *pubqos,
-			MessageSize:     *size,
-			MessageCount:    *count,
+	var modes []string
+	if *aware {
+		modes = []string{"FoS", "FoP", "FoP_cache"}
+	} else {
+		modes = []string{"Hive"}
+	}
+
+	runs := make([]RunData, 0)
+
+	for _, mode := range modes {
+		for _, ci := range clients {
+			var ri = riTemplate // no need to deep copy here
+			ri.Mode = mode
+			ri.NumberOfClients = ci
+			run(&ri)
+			runs = append(runs, ri)
 		}
-		run(&ri)
-		runs[i] = ri
 	}
 
 	var fileName = fmt.Sprintf("reports/report_%s.csv", testSet)
@@ -166,9 +187,9 @@ func main() {
 
 func run(ri *RunData) {
 
-	var beQuiet = false
+	const beQuiet = false
 
-	const topicStub = "test/"
+	const topicStub = "test/go/"
 	const keepAlive = 60
 
 	// not used atm
@@ -179,6 +200,22 @@ func run(ri *RunData) {
 
 	if ri.NumberOfClients < 1 {
 		log.Fatal("Invalid arguments")
+	}
+
+	// settings
+	if !beQuiet {
+		log.Printf("Setting mode to %s \n", ri.Mode)
+	}
+
+	if ri.Aware {
+		mc := CreatePurposeClient(ri.Server)
+		mc.setMode(ri.Mode)
+		mc.Reset()
+		mc.Reserve(topicStub + "HASH", PurposeSet{
+			aip: []string{"research", "benchmarking"},
+			pip: []string{"benchmarking/other"},
+		})
+		time.Sleep(500 * time.Millisecond)
 	}
 
 	//start subscribe
@@ -198,10 +235,11 @@ func run(ri *RunData) {
 			BrokerURL:  ri.Server,
 			BrokerUser: username,
 			BrokerPass: password,
-			SubTopic:   topicStub + "-" + strconv.Itoa(i),
+			SubTopic:   topicStub + "bm-" + strconv.Itoa(i),
 			SubQoS:     byte(ri.SubQoS),
 			KeepAlive:  keepAlive,
 			Quiet:      beQuiet,
+			Aware:      ri.Aware,
 		}
 		go sub.run(subResCh, subDone, jobDone)
 	}
@@ -237,7 +275,7 @@ SUBJOBDONE:
 			BrokerURL:  ri.Server,
 			BrokerUser: username,
 			BrokerPass: password,
-			PubTopic:   topicStub + "-" + strconv.Itoa(i),
+			PubTopic:   topicStub + "bm-" + strconv.Itoa(i),
 			MsgSize:    ri.MessageSize,
 			MsgCount:   ri.MessageCount,
 			PubQoS:     byte(ri.PubQoS),

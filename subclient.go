@@ -21,11 +21,18 @@ type SubClient struct {
 	SubQoS     byte
     KeepAlive  int
 	Quiet      bool
+	Aware bool
 }
 
 func (c *SubClient) run(res chan *SubResults, subDone chan bool, jobDone chan bool,) {
 	runResults := new(SubResults)
 	runResults.ID = c.ID
+
+	const benchmarkingAP = "benchmarking/go"
+
+	if c.Aware {
+		c.SubTopic = fmt.Sprintf("!AP/%s{%s}", c.SubTopic, benchmarkingAP)
+	}
 	
 	forwardLatency := []float64{}
 
