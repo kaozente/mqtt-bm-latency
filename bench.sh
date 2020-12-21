@@ -15,7 +15,7 @@ sleep 3
 
 echo "presub..."
 mqtt pub --topic "RESERVE/bench/HASH{benchmarking}" --message ""  -h $SERVER
-for i in {0..9}                                                                                                                                            
+for i in {0..24}                                                                                                                                            
 do
 	mqtt pub --topic "SETTING/PRESUB/mqtt-benchmark-$i/bench/bm-$i{benchmarking/bm}" --message "" -h $SERVER
 done
