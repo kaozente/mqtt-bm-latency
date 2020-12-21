@@ -59,7 +59,7 @@ func packPurposes(aip PurposeSet) string {
 	)
 }
 
-func (pc *PurposeClient) setMode(mode string) {
+func (pc *PurposeClient) SetMode(mode string) {
 	FoP := strings.Contains(mode, "FoP")
 	FoS := strings.Contains(mode, "FoS")
 	Hbr := strings.Contains(mode, "Hbr")
@@ -83,4 +83,8 @@ func (pc *PurposeClient) publish(topic string, payloadString string) {
 	fmt.Printf("sending %s to %s \n", payloadString, topic)
 	payload := []byte(payloadString)
 	pc.mqttClient.Publish(topic, 2, false, payload)
+}
+
+func (pc *PurposeClient) Disconnect() {
+	pc.mqttClient.Disconnect(1000)
 }

@@ -89,7 +89,7 @@ type JSONResults struct {
 type RunData struct {
 	// input
 	TestSet         string
-	TestIteration int
+	TestIteration   int
 	Server          string
 	NumberOfClients int
 	PubQoS          int
@@ -124,10 +124,10 @@ func main() {
 		//topic    = flag.String("topic", "/test", "MQTT topic for outgoing messages")
 		//username = flag.String("username", "", "MQTT username (empty if auth disabled)")
 		//password = flag.String("password", "", "MQTT password (empty if auth disabled)")
-		pubqos = flag.Int("pubqos", 1, "QoS for published messages")
-		subqos = flag.Int("subqos", 1, "QoS for subscribed messages")
-		size   = flag.Int("size", 100, "Size of the messages payload (bytes)")
-		count  = flag.Int("count", 100, "Number of messages to send per pubclient")
+		pubqos     = flag.Int("pubqos", 1, "QoS for published messages")
+		subqos     = flag.Int("subqos", 1, "QoS for subscribed messages")
+		size       = flag.Int("size", 100, "Size of the messages payload (bytes)")
+		count      = flag.Int("count", 100, "Number of messages to send per pubclient")
 		iterations = flag.Int("iterations", 1, "number of runs per config")
 		//clients     = flag.Int("clients", 2, "Number of clients pair to start")
 		//keepalive = flag.Int("keepalive", 60, "Keep alive period in seconds")
@@ -141,7 +141,7 @@ func main() {
 	time.Sleep(time.Second * 1)
 
 	var testSet = time.Now().Format("2006_01_02__15_04_05")
-	var clients = []int{1,5,10,25,50,75,100,150,200} // , 5, 10, 25, 50, 100}
+	var clients = []int{1, 5, 10, 25, 50, 75, 100, 150, 200} // , 5, 10, 25, 50, 100}
 
 	var riTemplate = RunData{
 		TestSet: testSet,
@@ -213,14 +213,23 @@ func run(ri *RunData) {
 	}
 
 	if ri.Aware {
+
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Println("Recovered from creating MC", r)
+				return
+			}
+		}()
+
 		mc := CreatePurposeClient(ri.Server)
-		mc.setMode(ri.Mode)
+		mc.SetMode(ri.Mode)
 		mc.Reset()
-		mc.Reserve(topicStub + "HASH", PurposeSet{
+		mc.Reserve(topicStub+"HASH", PurposeSet{
 			aip: []string{"research", "benchmarking"},
 			pip: []string{"benchmarking/other"},
 		})
 		time.Sleep(500 * time.Millisecond)
+		mc.Disconnect()
 	}
 
 	//start subscribe
