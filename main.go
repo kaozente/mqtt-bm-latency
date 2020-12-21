@@ -89,6 +89,7 @@ type JSONResults struct {
 type RunData struct {
 	// input
 	TestSet         string
+	TestIteration int
 	Server          string
 	NumberOfClients int
 	PubQoS          int
@@ -127,6 +128,7 @@ func main() {
 		subqos = flag.Int("subqos", 1, "QoS for subscribed messages")
 		size   = flag.Int("size", 100, "Size of the messages payload (bytes)")
 		count  = flag.Int("count", 100, "Number of messages to send per pubclient")
+		iterations = flag.Int("iterations", 1, "number of runs per config")
 		//clients     = flag.Int("clients", 2, "Number of clients pair to start")
 		//keepalive = flag.Int("keepalive", 60, "Keep alive period in seconds")
 		//format    = flag.String("format", "csv", "Output format: text|json")
@@ -139,7 +141,7 @@ func main() {
 	time.Sleep(time.Second * 1)
 
 	var testSet = time.Now().Format("2006_01_02__15_04_05")
-	var clients = []int{1,10,25,50} // , 5, 10, 25, 50, 100}
+	var clients = []int{1,5,10,25,50,75,100,150,200} // , 5, 10, 25, 50, 100}
 
 	var riTemplate = RunData{
 		TestSet: testSet,
@@ -161,13 +163,16 @@ func main() {
 
 	runs := make([]RunData, 0)
 
-	for _, mode := range modes {
-		for _, ci := range clients {
-			var ri = riTemplate // no need to deep copy here
-			ri.Mode = mode
-			ri.NumberOfClients = ci
-			run(&ri)
-			runs = append(runs, ri)
+	for i := 0; i < *iterations; i++ {
+		for _, mode := range modes {
+			for _, ci := range clients {
+				var ri = riTemplate // no need to deep copy here
+				ri.Mode = mode
+				ri.NumberOfClients = ci
+				ri.TestIteration = i
+				run(&ri)
+				runs = append(runs, ri)
+			}
 		}
 	}
 
