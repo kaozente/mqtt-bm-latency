@@ -155,7 +155,7 @@ func main() {
 	time.Sleep(time.Second * 1)
 
 	var testSet = time.Now().Format("2006_01_02__15_04_05")
-	var clients = []int{1, 5, 10, 25, 50} // , 75, 100, 150, 200} // , 5, 10, 25, 50, 100}
+	var clients = []int{1, 5, 10, 25, 50, 75, 100, 150, 200} // , 5, 10, 25, 50, 100}
 
 	var riTemplate = RunData{
 		TestSet: testSet,
