@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"github.com/gocarina/gocsv"
 	"os"
 
 	//"encoding/csv"
@@ -14,7 +15,6 @@ import (
 	"time"
 
 	"github.com/GaryBoone/GoStats/stats"
-	"github.com/gocarina/gocsv"
 )
 
 // Message describes a message
@@ -88,18 +88,20 @@ type JSONResults struct {
 
 type RunData struct {
 	// input
-	TestSet         string
-	TestIteration   int
-	Server          string
-	NumberOfClients int
-	PubQoS          int
-	SubQoS          int
-	MessageSize     int
-	MessageCount    int
+	TestSet              string
+	TestIteration        int
+	Server               string
+	NumberOfClients      int
+	NumberOfReservations int
+	PubQoS               int
+	SubQoS               int
+	MessageSize          int
+	MessageCount         int
 
 	// settings
-	Mode  string
-	Aware bool
+	Mode     string
+	Aware    bool
+	Scenario string
 
 	//output
 	Throughput        float64
@@ -111,6 +113,17 @@ type RunData struct {
 	FwdLatencyMax     float64
 	FwdLatencyMeanAvg float64
 	FwdLatencyMeanStd float64
+}
+
+func (rd RunData) toStr() string {
+	return fmt.Sprintf(
+		"%d clients, %d reservations (%s %d): %f msg/s",
+		rd.NumberOfClients,
+		rd.NumberOfReservations,
+		rd.Scenario,
+		rd.TestIteration,
+		rd.Throughput,
+	)
 }
 
 //type CSVResults struct {
@@ -132,8 +145,9 @@ func main() {
 		//clients     = flag.Int("clients", 2, "Number of clients pair to start")
 		//keepalive = flag.Int("keepalive", 60, "Keep alive period in seconds")
 		//format    = flag.String("format", "csv", "Output format: text|json")
-		//quiet     = flag.Bool("quiet", false, "Suppress logs while running")
+		quiet = flag.Bool("quiet", true, "Suppress logs while running")
 		aware = flag.Bool("pbac", true, "use purposes")
+		//scenario = flag.String("scenario", "simple", "simple/nested")
 	)
 
 	flag.Parse()
@@ -141,7 +155,7 @@ func main() {
 	time.Sleep(time.Second * 1)
 
 	var testSet = time.Now().Format("2006_01_02__15_04_05")
-	var clients = []int{1, 5, 10, 25, 50, 75, 100, 150, 200} // , 5, 10, 25, 50, 100}
+	var clients = []int{1, 5, 10, 25, 50} // , 75, 100, 150, 200} // , 5, 10, 25, 50, 100}
 
 	var riTemplate = RunData{
 		TestSet: testSet,
@@ -152,26 +166,55 @@ func main() {
 		MessageSize:  *size,
 		MessageCount: *count,
 		Aware:        *aware,
+		//Scenario:     *scenario,
 	}
+
+	beQuiet := *quiet
 
 	var modes []string
+	var resNums []int
 	if *aware {
-		modes = []string{"FoS", "FoP", "FoP_cache"}
+		modes = []string{"FoS", "FoP", "FoP_Flat", "FoP_Cache", "NoF"}
+		resNums = []int{100, 0, 1000}
+
 	} else {
 		modes = []string{"Hive"}
+		resNums = []int{0}
+
 	}
 
+	scenarios := []string{"simple", "nested"}
+
+	fmt.Println("Modes:", modes)
+
 	runs := make([]RunData, 0)
+
+	total_start_time := time.Now()
+	total_runs := *iterations * len(modes) * len(clients) * len(scenarios) * len(resNums)
+	log.Printf("starting %d runs at %v", total_runs, total_start_time)
+	run_count := 0
 
 	for i := 0; i < *iterations; i++ {
 		for _, mode := range modes {
 			for _, ci := range clients {
-				var ri = riTemplate // no need to deep copy here
-				ri.Mode = mode
-				ri.NumberOfClients = ci
-				ri.TestIteration = i
-				run(&ri)
-				runs = append(runs, ri)
+				for _, sci := range scenarios {
+					for _, nres := range resNums {
+
+						var ri = riTemplate // no need to deep copy here
+						ri.Mode = mode
+						ri.NumberOfClients = ci
+						ri.TestIteration = i
+						ri.Scenario = sci
+						ri.NumberOfReservations = nres
+						run(&ri, beQuiet)
+						run_count++
+						passed := time.Now().Sub(total_start_time)
+						eta := passed.Minutes() / float64(run_count) * float64(total_runs-run_count)
+						log.Printf(ri.toStr())
+						log.Printf("finished %d/%d, ~ %f minutes remaining ", run_count, total_runs, eta)
+						runs = append(runs, ri)
+					}
+				}
 			}
 		}
 	}
@@ -190,9 +233,7 @@ func main() {
 	fmt.Println("Wrote file: ", fileName)
 }
 
-func run(ri *RunData) {
-
-	const beQuiet = false
+func run(ri *RunData, beQuiet bool) {
 
 	const topicStub = "test/go/"
 	const keepAlive = 60
@@ -221,13 +262,26 @@ func run(ri *RunData) {
 			}
 		}()
 
-		mc := CreatePurposeClient(ri.Server)
+		mc := CreatePurposeClient(ri.Server, beQuiet)
+		mc.MakeReservations(ri.NumberOfReservations)
 		mc.SetMode(ri.Mode)
 		mc.Reset()
-		mc.Reserve(topicStub+"HASH", PurposeSet{
+
+		aip := PurposeSet{
 			aip: []string{"research", "benchmarking"},
 			pip: []string{"benchmarking/other"},
-		})
+		}
+
+		if ri.Scenario == "nested" {
+			mc.Reserve(topicStub+"HASH", aip)
+			mc.Reserve(topicStub+"1/HASH", aip)
+			mc.Reserve(topicStub+"1/2/HASH", aip)
+			mc.Reserve(topicStub+"1/2/3/PLUS/1", aip)
+			mc.Reserve(topicStub+"1/2/3/PLUS/2", aip)
+			mc.Reserve(topicStub+"1/2/3/PLUS/3", aip)
+		} else {
+			mc.Reserve(topicStub+"HASH", aip)
+		}
 		time.Sleep(500 * time.Millisecond)
 		mc.Disconnect()
 	}
@@ -244,12 +298,20 @@ func run(ri *RunData) {
 	}
 
 	for i := 0; i < ri.NumberOfClients; i++ {
+
+		var topic string
+		if ri.Scenario == "nested" {
+			topic = topicStub + "1/2/3/" + "bm-" + strconv.Itoa(i) + "/#"
+		} else {
+			topic = topicStub + "bm-" + strconv.Itoa(i)
+		}
+
 		sub := &SubClient{
 			ID:         i,
 			BrokerURL:  ri.Server,
 			BrokerUser: username,
 			BrokerPass: password,
-			SubTopic:   topicStub + "bm-" + strconv.Itoa(i),
+			SubTopic:   topic,
 			SubQoS:     byte(ri.SubQoS),
 			KeepAlive:  keepAlive,
 			Quiet:      beQuiet,
@@ -284,12 +346,20 @@ SUBJOBDONE:
 	pubResCh := make(chan *PubResults)
 	start := time.Now()
 	for i := 0; i < ri.NumberOfClients; i++ {
+
+		var topic string
+		if ri.Scenario == "nested" {
+			topic = topicStub + "1/2/3/" + "bm-" + strconv.Itoa(i) + "/b"
+		} else {
+			topic = topicStub + "bm-" + strconv.Itoa(i)
+		}
+
 		c := &PubClient{
 			ID:         i,
 			BrokerURL:  ri.Server,
 			BrokerUser: username,
 			BrokerPass: password,
-			PubTopic:   topicStub + "bm-" + strconv.Itoa(i),
+			PubTopic:   topic,
 			MsgSize:    ri.MessageSize,
 			MsgCount:   ri.MessageCount,
 			PubQoS:     byte(ri.PubQoS),
@@ -328,8 +398,8 @@ SUBJOBDONE:
 	// collect the sub results
 	subtotals := calculateSubscribeResults(subresults, pubresults)
 
-	// print stats
-	printResults(pubresults, pubtotals, subresults, subtotals, format, ri)
+	// print stats (csv report is handled separately)
+	printResults(pubresults, pubtotals, subresults, subtotals, format, ri, beQuiet)
 
 	if !beQuiet {
 		log.Printf("All jobs done.\n")
@@ -411,6 +481,7 @@ func printResults(
 	subtotals *TotalSubResults,
 	format string,
 	ri *RunData,
+	quiet bool,
 ) {
 
 	ri.Throughput = pubtotals.TotalMsgsPerSec
@@ -422,6 +493,10 @@ func printResults(
 	ri.FwdLatencyMax = subtotals.FwdLatencyMax
 	ri.FwdLatencyMeanAvg = subtotals.FwdLatencyMeanAvg
 	ri.FwdLatencyMeanStd = subtotals.FwdLatencyMeanStd
+
+	if quiet {
+		return
+	}
 
 	switch format {
 	case "json":
