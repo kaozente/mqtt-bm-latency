@@ -117,9 +117,11 @@ type RunData struct {
 
 func (rd RunData) toStr() string {
 	return fmt.Sprintf(
-		"%d clients, %d reservations (%s %d): %f msg/s",
+		"%d clients x %d msg, %d reservations (%s %s #%d): %f msg/s",
 		rd.NumberOfClients,
+		rd.MessageCount,
 		rd.NumberOfReservations,
+		rd.Mode,
 		rd.Scenario,
 		rd.TestIteration,
 		rd.Throughput,
@@ -155,7 +157,7 @@ func main() {
 	time.Sleep(time.Second * 1)
 
 	var testSet = time.Now().Format("2006_01_02__15_04_05")
-	var clients = []int{1, 5, 10, 25, 50, 75, 100, 150, 200} // , 5, 10, 25, 50, 100}
+	var clients = []int{1, 5, 10, 50, 100, 200, 500, 1000} // , 5, 10, 25, 50, 100}
 
 	var riTemplate = RunData{
 		TestSet: testSet,
@@ -175,7 +177,7 @@ func main() {
 	var resNums []int
 	if *aware {
 		modes = []string{"FoS", "FoP", "FoP_Flat", "FoP_Cache", "NoF"}
-		resNums = []int{100, 0, 1000}
+		resNums = []int{10000, 0, 1000}
 
 	} else {
 		modes = []string{"Hive"}
@@ -194,11 +196,17 @@ func main() {
 	log.Printf("starting %d runs at %v", total_runs, total_start_time)
 	run_count := 0
 
+	var fileName = fmt.Sprintf("reports/report_%s.csv", testSet)
+
 	for i := 0; i < *iterations; i++ {
-		for _, mode := range modes {
-			for _, ci := range clients {
+		for _, ci := range clients {
+			for _, mode := range modes {
 				for _, sci := range scenarios {
 					for _, nres := range resNums {
+						numMessages := (10 * *count / ci)
+						if numMessages < *count {
+							numMessages = *count
+						}
 
 						var ri = riTemplate // no need to deep copy here
 						ri.Mode = mode
@@ -206,6 +214,7 @@ func main() {
 						ri.TestIteration = i
 						ri.Scenario = sci
 						ri.NumberOfReservations = nres
+						ri.MessageCount = numMessages
 						run(&ri, beQuiet)
 						run_count++
 						passed := time.Now().Sub(total_start_time)
@@ -216,10 +225,13 @@ func main() {
 					}
 				}
 			}
+			writeCSV(runs, fileName)
 		}
 	}
 
-	var fileName = fmt.Sprintf("reports/report_%s.csv", testSet)
+}
+
+func writeCSV(runs []RunData, fileName string) {
 	reportFile, fileErr := os.OpenFile(fileName, os.O_RDWR|os.O_CREATE, os.ModePerm)
 	if fileErr != nil {
 		fmt.Println("error opening file: ", fileErr)

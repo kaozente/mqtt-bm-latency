@@ -64,7 +64,8 @@ func (pc *PurposeClient) MakeReservations(nres int) {
 	}
 
 	for i := 0; i < nres; i++ {
-		pc.Reserve(fmt.Sprintf("reserved/%d", i), aip)
+		// use  a hash reservation to make trigger advanced lookup
+		pc.Reserve(fmt.Sprintf("reserved/%d/HASH", i), aip)
 	}
 }
 
