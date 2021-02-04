@@ -4,14 +4,13 @@ import (
 	"bytes"
 	"github.com/gocarina/gocsv"
 	"os"
-
+	"strconv"
 	//"encoding/csv"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
-	//"os"
-	"strconv"
+
 	"time"
 
 	"github.com/GaryBoone/GoStats/stats"
@@ -89,6 +88,7 @@ type JSONResults struct {
 type RunData struct {
 	// input
 	TestSet              string
+	Action 				 string
 	TestIteration        int
 	Server               string
 	NumberOfClients      int
@@ -150,6 +150,7 @@ func main() {
 		quiet = flag.Bool("quiet", true, "Suppress logs while running")
 		aware = flag.Bool("pbac", true, "use purposes")
 		//scenario = flag.String("scenario", "simple", "simple/nested")
+		action = flag.String("action", "pubsub", "pubsub/subscribe/reserve")
 	)
 
 	flag.Parse()
@@ -157,7 +158,7 @@ func main() {
 	time.Sleep(time.Second * 1)
 
 	var testSet = time.Now().Format("2006_01_02__15_04_05")
-	var clients = []int{1, 5, 10, 50, 100, 200, 500, 1000} // , 5, 10, 25, 50, 100}
+	var clients = []int{1,10,25, 50, 100, 150}
 
 	var riTemplate = RunData{
 		TestSet: testSet,
@@ -168,6 +169,7 @@ func main() {
 		MessageSize:  *size,
 		MessageCount: *count,
 		Aware:        *aware,
+		Action:		  *action,
 		//Scenario:     *scenario,
 	}
 
@@ -176,13 +178,12 @@ func main() {
 	var modes []string
 	var resNums []int
 	if *aware {
-		modes = []string{"FoS", "FoP", "FoP_Flat", "FoP_Cache", "NoF"}
-		resNums = []int{10000, 0, 1000}
+		modes = []string{"FoS", "FoS_Persist", "FoS_Flat", "Hbr", "Hbr_Flat", "FoP", "FoP_Flat", "FoP_Cache", "NoF"}
+		resNums = []int{0, 250, 1000} // 10000, 0, 1000}
 
 	} else {
 		modes = []string{"Hive"}
 		resNums = []int{0}
-
 	}
 
 	scenarios := []string{"simple", "nested"}
@@ -193,7 +194,7 @@ func main() {
 
 	total_start_time := time.Now()
 	total_runs := *iterations * len(modes) * len(clients) * len(scenarios) * len(resNums)
-	log.Printf("starting %d runs at %v", total_runs, total_start_time)
+	log.Printf("starting %d runs for %s at %v", total_runs, riTemplate.Action, total_start_time)
 	run_count := 0
 
 	var fileName = fmt.Sprintf("reports/report_%s.csv", testSet)
@@ -248,13 +249,6 @@ func writeCSV(runs []RunData, fileName string) {
 func run(ri *RunData, beQuiet bool) {
 
 	const topicStub = "test/go/"
-	const keepAlive = 60
-
-	// not used atm
-	const username = ""
-	const password = ""
-
-	const format = "csv"
 
 	if ri.NumberOfClients < 1 {
 		log.Fatal("Invalid arguments")
@@ -296,7 +290,157 @@ func run(ri *RunData, beQuiet bool) {
 		}
 		time.Sleep(500 * time.Millisecond)
 		mc.Disconnect()
+
+		// run depending on action
+		switch ri.Action {
+
+		case "reserve":
+			runRes(ri, beQuiet, topicStub)
+		case "subscribe":
+			runSub(ri, beQuiet, topicStub)
+		default:
+			ri.Action = "pubsub"
+			runPubSub(ri, beQuiet, topicStub)
+		}
 	}
+
+}
+
+func runRes(ri *RunData, beQuiet bool, topicStub string) {
+	//start publish
+	ri.Action = "reserve"
+	if !beQuiet {
+		log.Printf("Starting publish..\n")
+	}
+	pubResCh := make(chan *PubResults)
+	start := time.Now()
+	for i := 0; i < ri.NumberOfClients; i++ {
+
+		var topic string
+		if ri.Scenario == "nested" {
+			topic = topicStub + "1/2/3/" + "bm-" + strconv.Itoa(i) + "/b"
+		} else {
+			topic = topicStub + "bm-" + strconv.Itoa(i)
+		}
+
+
+		aip := PurposeSet{
+			aip: []string{"research", "benchmarking/reservation"},
+			pip: []string{"benchmarking/other"},
+		}
+
+		c := &ResBenchClient{
+			ID:         i,
+			BrokerURL:  ri.Server,
+			BrokerUser: "",
+			BrokerPass: "",
+			PubTopic:   topic,
+			Aip: aip,
+			MsgSize:    ri.MessageSize,
+			MsgCount:   ri.MessageCount,
+			PubQoS:     byte(ri.PubQoS),
+			KeepAlive:  60,
+			Quiet:      beQuiet,
+		}
+		go c.run(pubResCh)
+	}
+
+	// collect the publish results
+	pubresults := make([]*PubResults, ri.NumberOfClients)
+	for i := 0; i < ri.NumberOfClients; i++ {
+		pubresults[i] = <-pubResCh
+	}
+	totalTime := time.Now().Sub(start)
+	pubtotals := calculatePublishResults(pubresults, totalTime)
+
+	for i := 0; i < 3; i++ {
+		time.Sleep(1 * time.Second)
+		if !beQuiet {
+			log.Printf("Benchmark will stop after %v seconds.\n", 3-i)
+		}
+	}
+
+	ri.Throughput = pubtotals.TotalMsgsPerSec
+	ri.TotalRunTime = pubtotals.TotalRunTime
+	ri.Failures = pubtotals.Failures
+	ri.PubTimeMax = pubtotals.PubTimeMax
+	ri.PubTimeMeanAvg = pubtotals.PubTimeMeanAvg
+	ri.PubTimeMeanStd = pubtotals.PubTimeMeanStd
+	ri.FwdLatencyMax = 0
+	ri.FwdLatencyMeanAvg = 0
+	ri.FwdLatencyMeanStd = 0
+}
+
+
+func runSub(ri *RunData, beQuiet bool, topicStub string) {
+	//start publish
+	ri.Action = "subscribe"
+	if !beQuiet {
+		log.Printf("Starting subscribe..\n")
+	}
+	pubResCh := make(chan *PubResults)
+	start := time.Now()
+	for i := 0; i < ri.NumberOfClients; i++ {
+
+		var topic string
+		if ri.Scenario == "nested" {
+			topic = topicStub + "1/2/3/" + "bm-" + strconv.Itoa(i) + "/b"
+		} else {
+			topic = topicStub + "bm-" + strconv.Itoa(i)
+		}
+
+		c := &SubBenchClient{
+			ID:         i,
+			BrokerURL:  ri.Server,
+			BrokerUser: "",
+			BrokerPass: "",
+			SubTopic:   topic, // will be numbered + AP'ed
+			AP: "test/benchmarking/subscribe",
+			MsgSize:    ri.MessageSize,
+			MsgCount:   ri.MessageCount,
+			SubQoS:     byte(ri.PubQoS),
+			KeepAlive:  60,
+			Quiet:      beQuiet,
+		}
+		go c.run(pubResCh)
+	}
+
+	// collect the publish results
+	pubresults := make([]*PubResults, ri.NumberOfClients)
+	for i := 0; i < ri.NumberOfClients; i++ {
+		pubresults[i] = <-pubResCh
+	}
+	totalTime := time.Now().Sub(start)
+	pubtotals := calculatePublishResults(pubresults, totalTime)
+
+	for i := 0; i < 3; i++ {
+		time.Sleep(1 * time.Second)
+		if !beQuiet {
+			log.Printf("Benchmark will stop after %v seconds.\n", 3-i)
+		}
+	}
+
+	ri.Throughput = pubtotals.TotalMsgsPerSec
+	ri.TotalRunTime = pubtotals.TotalRunTime
+	ri.Failures = pubtotals.Failures
+	ri.PubTimeMax = pubtotals.PubTimeMax
+	ri.PubTimeMeanAvg = pubtotals.PubTimeMeanAvg
+	ri.PubTimeMeanStd = pubtotals.PubTimeMeanStd
+	ri.FwdLatencyMax = 0
+	ri.FwdLatencyMeanAvg = 0
+	ri.FwdLatencyMeanStd = 0
+}
+
+func runPubSub(ri *RunData, beQuiet bool, topicStub string) {
+	ri.Action = "pubsub"
+
+	const keepAlive = 60
+
+	// not used atm
+	const username = ""
+	const password = ""
+
+	const format = "csv"
 
 	//start subscribe
 

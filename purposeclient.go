@@ -53,8 +53,8 @@ func (pc *PurposeClient) Reset() {
 }
 
 func (pc *PurposeClient) Reserve(topic string, aip PurposeSet) {
-	resTopic := fmt.Sprintf("!RESERVE/%s%s", topic, packPurposes(aip))
-	pc.publish(resTopic, "")
+
+	pc.publish(aip.AddToTopic(topic), "")
 }
 
 func (pc *PurposeClient) MakeReservations(nres int) {
@@ -76,6 +76,11 @@ func packPurposes(aip PurposeSet) string {
 	)
 }
 
+func (eip PurposeSet) AddToTopic(topic string) string {
+	return fmt.Sprintf("!RESERVE/%s%s", topic, packPurposes(eip))
+}
+
+
 func (pc *PurposeClient) SetMode(mode string) {
 	FoP := strings.Contains(mode, "FoP")
 	FoS := strings.Contains(mode, "FoS")
@@ -83,16 +88,18 @@ func (pc *PurposeClient) SetMode(mode string) {
 	// NoF will result in none of them set
 	TreeStore := !strings.Contains(mode, "Flat")
 	Cache := strings.Contains(mode, "Cache")
+	AutoPersist := strings.Contains(mode, "Persist")
 
-	pc.setModeFlags(FoP, FoS, Hbr, TreeStore, Cache)
+	pc.setModeFlags(FoP, FoS, Hbr, TreeStore, AutoPersist, Cache)
 
 }
 
-func (pc *PurposeClient) setModeFlags(FoP, FoS, Hbr, TreeStore, Cache bool) {
+func (pc *PurposeClient) setModeFlags(FoP, FoS, Hbr, TreeStore, AutoPersist, Cache bool) {
 	pc.MakeSetting("filter_on_publish", FoP)
 	pc.MakeSetting("filter_on_subscribe", FoS)
 	pc.MakeSetting("filter_hybrid", Hbr)
 	pc.MakeSetting("use_tree_store", TreeStore)
+	pc.MakeSetting("auto_persist", AutoPersist)
 	pc.MakeSetting("cache_reservations", Cache)
 	pc.MakeSetting("cache_subscriptions", Cache)
 }
