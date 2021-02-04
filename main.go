@@ -158,7 +158,7 @@ func main() {
 	time.Sleep(time.Second * 1)
 
 	var testSet = time.Now().Format("2006_01_02__15_04_05")
-	var clients = []int{1,10,25, 50, 100, 150}
+	var clients = []int{1,10,25, 50, 100, 250}
 
 	var riTemplate = RunData{
 		TestSet: testSet,
@@ -178,8 +178,8 @@ func main() {
 	var modes []string
 	var resNums []int
 	if *aware {
-		modes = []string{"FoS", "FoS_Persist", "FoS_Flat", "Hbr", "Hbr_Flat", "FoP", "FoP_Flat", "FoP_Cache", "NoF"}
-		resNums = []int{0, 250, 1000} // 10000, 0, 1000}
+		modes = []string{"FoS", "Hbr", "FoP", "FoP_Flat", "FoP_Cache", "NoF"}
+		resNums = []int{0, 1000, 10000} // 10000, 0, 1000}
 
 	} else {
 		modes = []string{"Hive"}
