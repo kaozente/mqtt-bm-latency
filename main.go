@@ -2,18 +2,18 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
+	"github.com/GaryBoone/GoStats/stats"
 	"github.com/gocarina/gocsv"
 	"os"
 	"strconv"
-	//"encoding/csv"
-	"encoding/json"
+	"strings"
+
 	"flag"
 	"fmt"
 	"log"
 
 	"time"
-
-	"github.com/GaryBoone/GoStats/stats"
 )
 
 // Message describes a message
@@ -88,7 +88,7 @@ type JSONResults struct {
 type RunData struct {
 	// input
 	TestSet              string
-	Action 				 string
+	Action               string
 	TestIteration        int
 	Server               string
 	NumberOfClients      int
@@ -97,6 +97,7 @@ type RunData struct {
 	SubQoS               int
 	MessageSize          int
 	MessageCount         int
+	TotalFwdRatio        float64
 
 	// settings
 	Mode     string
@@ -113,11 +114,13 @@ type RunData struct {
 	FwdLatencyMax     float64
 	FwdLatencyMeanAvg float64
 	FwdLatencyMeanStd float64
+	TotalReceived     int64
+	TotalLoss         int64
 }
 
 func (rd RunData) toStr() string {
 	return fmt.Sprintf(
-		"%d clients x %d msg, %d reservations (%s %s #%d): %f msg/s",
+		"%d clients x %d msg, %d reservations (%s %s #%d): %f msg/s for %d",
 		rd.NumberOfClients,
 		rd.MessageCount,
 		rd.NumberOfReservations,
@@ -125,6 +128,7 @@ func (rd RunData) toStr() string {
 		rd.Scenario,
 		rd.TestIteration,
 		rd.Throughput,
+		rd.TotalReceived,
 	)
 }
 
@@ -150,7 +154,10 @@ func main() {
 		quiet = flag.Bool("quiet", true, "Suppress logs while running")
 		aware = flag.Bool("pbac", true, "use purposes")
 		//scenario = flag.String("scenario", "simple", "simple/nested")
-		action = flag.String("action", "pubsub", "pubsub/subscribe/reserve")
+		action             = flag.String("action", "pubsub", "pubsub/subscribe/reserve")
+		clientsString      = flag.String("clients", "1,5,10,25,100,250", "comma-separated number of clients")
+		modesString        = flag.String("modes", "", "comma-separated modes")
+		reservationsString = flag.String("reservations", "", "comma-separated num of reservations")
 	)
 
 	flag.Parse()
@@ -158,7 +165,54 @@ func main() {
 	time.Sleep(time.Second * 1)
 
 	var testSet = time.Now().Format("2006_01_02__15_04_05")
-	var clients = []int{1,10,25, 50, 100, 250}
+
+	var clients = []int{}
+	clientStrings := strings.Split(*clientsString, ",")
+	for _, c := range clientStrings {
+		ci, err := strconv.Atoi(c)
+		if err == nil {
+			clients = append(clients, ci)
+		} else {
+			log.Println("error converting clients list ", c, err)
+		}
+	}
+
+	var modes []string
+	var resNums []int
+
+	if *modesString == "" { // use default mode list for given awareness
+		if *aware {
+			modes = []string{"FoS", "Hbr", "FoP", "FoP_Flat", "FoP_Cache", "NoF"}
+		} else {
+			modes = []string{"Hive"}
+		}
+	} else { // generate modes from CLI parameter
+
+		modeStrings := strings.Split(*modesString, ",")
+		for _, c := range modeStrings {
+			ci := strings.TrimSpace(c)
+			modes = append(modes, ci)
+		}
+	}
+
+	if *modesString == "" { // use default mode list for given awareness
+		if *aware {
+			resNums = []int{0,1000,10000} // 10000, 0, 1000}
+		} else {
+			resNums = []int{0}
+		}
+	} else { // generate modes from CLI parameter
+
+		resStrings := strings.Split(*reservationsString, ",")
+		for _, c := range resStrings {
+			ci, err := strconv.Atoi(c)
+			if err == nil {
+				resNums = append(resNums, ci)
+			} else {
+				log.Println("error converting resnums list ", c, err)
+			}
+		}
+	}
 
 	var riTemplate = RunData{
 		TestSet: testSet,
@@ -169,33 +223,24 @@ func main() {
 		MessageSize:  *size,
 		MessageCount: *count,
 		Aware:        *aware,
-		Action:		  *action,
+		Action:       *action,
 		//Scenario:     *scenario,
 	}
 
 	beQuiet := *quiet
 
-	var modes []string
-	var resNums []int
-	if *aware {
-		modes = []string{"FoS", "Hbr", "FoP", "FoP_Flat", "FoP_Cache", "NoF"}
-		resNums = []int{0, 1000, 10000} // 10000, 0, 1000}
-
-	} else {
-		modes = []string{"Hive"}
-		resNums = []int{0}
-	}
-
 	scenarios := []string{"simple", "nested"}
 
-	fmt.Println("Modes:", modes)
+	log.Println("starting a new run!")
+	log.Println("client config: ", clients)
+	log.Println("mode config: ", modes)
 
 	runs := make([]RunData, 0)
 
-	total_start_time := time.Now()
-	total_runs := *iterations * len(modes) * len(clients) * len(scenarios) * len(resNums)
-	log.Printf("starting %d runs for %s at %v", total_runs, riTemplate.Action, total_start_time)
-	run_count := 0
+	totalStartTime := time.Now()
+	totalRuns := *iterations * len(modes) * len(clients) * len(scenarios) * len(resNums)
+	log.Printf("starting %d runs for %s at %v", totalRuns, riTemplate.Action, totalStartTime)
+	runCount := 0
 
 	var fileName = fmt.Sprintf("reports/report_%s.csv", testSet)
 
@@ -217,11 +262,11 @@ func main() {
 						ri.NumberOfReservations = nres
 						ri.MessageCount = numMessages
 						run(&ri, beQuiet)
-						run_count++
-						passed := time.Now().Sub(total_start_time)
-						eta := passed.Minutes() / float64(run_count) * float64(total_runs-run_count)
+						runCount++
+						passed := time.Now().Sub(totalStartTime)
+						eta := passed.Minutes() / float64(runCount) * float64(totalRuns-runCount)
 						log.Printf(ri.toStr())
-						log.Printf("finished %d/%d, ~ %f minutes remaining ", run_count, total_runs, eta)
+						log.Printf("finished %d/%d, ~ %f minutes remaining ", runCount, totalRuns, eta)
 						runs = append(runs, ri)
 					}
 				}
@@ -269,9 +314,10 @@ func run(ri *RunData, beQuiet bool) {
 		}()
 
 		mc := CreatePurposeClient(ri.Server, beQuiet)
-		mc.MakeReservations(ri.NumberOfReservations)
 		mc.SetMode(ri.Mode)
 		mc.Reset()
+
+		mc.MakeReservations(ri.NumberOfReservations)
 
 		aip := PurposeSet{
 			aip: []string{"research", "benchmarking"},
@@ -323,7 +369,6 @@ func runRes(ri *RunData, beQuiet bool, topicStub string) {
 			topic = topicStub + "bm-" + strconv.Itoa(i)
 		}
 
-
 		aip := PurposeSet{
 			aip: []string{"research", "benchmarking/reservation"},
 			pip: []string{"benchmarking/other"},
@@ -335,7 +380,7 @@ func runRes(ri *RunData, beQuiet bool, topicStub string) {
 			BrokerUser: "",
 			BrokerPass: "",
 			PubTopic:   topic,
-			Aip: aip,
+			Aip:        aip,
 			MsgSize:    ri.MessageSize,
 			MsgCount:   ri.MessageCount,
 			PubQoS:     byte(ri.PubQoS),
@@ -366,11 +411,11 @@ func runRes(ri *RunData, beQuiet bool, topicStub string) {
 	ri.PubTimeMax = pubtotals.PubTimeMax
 	ri.PubTimeMeanAvg = pubtotals.PubTimeMeanAvg
 	ri.PubTimeMeanStd = pubtotals.PubTimeMeanStd
+	//subtotals.
 	ri.FwdLatencyMax = 0
 	ri.FwdLatencyMeanAvg = 0
 	ri.FwdLatencyMeanStd = 0
 }
-
 
 func runSub(ri *RunData, beQuiet bool, topicStub string) {
 	//start publish
@@ -395,7 +440,7 @@ func runSub(ri *RunData, beQuiet bool, topicStub string) {
 			BrokerUser: "",
 			BrokerPass: "",
 			SubTopic:   topic, // will be numbered + AP'ed
-			AP: "test/benchmarking/subscribe",
+			AP:         "test/benchmarking/subscribe",
 			MsgSize:    ri.MessageSize,
 			MsgCount:   ri.MessageCount,
 			SubQoS:     byte(ri.PubQoS),
@@ -649,6 +694,7 @@ func printResults(
 	ri.FwdLatencyMax = subtotals.FwdLatencyMax
 	ri.FwdLatencyMeanAvg = subtotals.FwdLatencyMeanAvg
 	ri.FwdLatencyMeanStd = subtotals.FwdLatencyMeanStd
+	ri.TotalReceived = subtotals.TotalReceived
 
 	if quiet {
 		return

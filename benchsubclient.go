@@ -39,7 +39,14 @@ func (c *SubBenchClient) run(res chan *PubResults) {
 
 	for i := 0; i < c.MsgCount; i++ {
 
-		topic := fmt.Sprintf("!AP/%s/%d/HASH{%s}", c.SubTopic, i, c.AP)
+		// when not purpose aware, AP is not set
+		var topic string
+		if c.AP != "" {
+			topic = fmt.Sprintf("!AP/%s/%d/HASH{%s}", c.SubTopic, i, c.AP)
+		} else {
+			topic = fmt.Sprintf("!AP/%s/%d/#", c.SubTopic, i)
+		}
+
 		subStarted := time.Now()
 
 		subToken := client.Subscribe(topic, c.SubQoS, nil)

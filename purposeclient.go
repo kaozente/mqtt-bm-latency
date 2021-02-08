@@ -45,16 +45,15 @@ func (pc *PurposeClient) MakeSetting(setting string, val bool) {
 	} else {
 		text = "false"
 	}
-	pc.publish(settingsTopic, text)
+	pc.publish(settingsTopic, text, true)
 }
 
 func (pc *PurposeClient) Reset() {
-	pc.publish("!PBAC/RESET", "")
+	pc.publish("!PBAC/RESET", "", true)
 }
 
 func (pc *PurposeClient) Reserve(topic string, aip PurposeSet) {
-
-	pc.publish(aip.AddToTopic(topic), "")
+	pc.publish(aip.AddToTopic(topic), "", true)
 }
 
 func (pc *PurposeClient) MakeReservations(nres int) {
@@ -104,12 +103,15 @@ func (pc *PurposeClient) setModeFlags(FoP, FoS, Hbr, TreeStore, AutoPersist, Cac
 	pc.MakeSetting("cache_subscriptions", Cache)
 }
 
-func (pc *PurposeClient) publish(topic string, payloadString string) {
+func (pc *PurposeClient) publish(topic string, payloadString string, wait bool) {
 	if !pc.beQuiet {
 		fmt.Printf("sending %s to %s \n", payloadString, topic)
 	}
 	payload := []byte(payloadString)
-	pc.mqttClient.Publish(topic, 2, false, payload)
+	pubToken := pc.mqttClient.Publish(topic, 2, false, payload)
+	if wait {
+		pubToken.Wait()
+	}
 }
 
 func (pc *PurposeClient) Disconnect() {

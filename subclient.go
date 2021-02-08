@@ -33,8 +33,8 @@ func (c *SubClient) run(res chan *SubResults, subDone chan bool, jobDone chan bo
 	if c.Aware {
 		c.SubTopic = fmt.Sprintf("!AP/%s{%s}", c.SubTopic, benchmarkingAP)
 	}
-	
-	forwardLatency := []float64{}
+
+	var forwardLatency []float64
 
 	ka, _ := time.ParseDuration(strconv.Itoa(c.KeepAlive) + "s")
 
@@ -81,7 +81,7 @@ func (c *SubClient) run(res chan *SubResults, subDone chan bool, jobDone chan bo
 	}
 
 	subDone <- true
-//加各项统计
+
 	for {
 		select {
 		case <- jobDone:
