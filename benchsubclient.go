@@ -44,7 +44,7 @@ func (c *SubBenchClient) run(res chan *PubResults) {
 		if c.AP != "" {
 			topic = fmt.Sprintf("!AP/%s/%d/HASH{%s}", c.SubTopic, i, c.AP)
 		} else {
-			topic = fmt.Sprintf("!AP/%s/%d/#", c.SubTopic, i)
+			topic = fmt.Sprintf("%s/%d/#", c.SubTopic, i)
 		}
 
 		subStarted := time.Now()

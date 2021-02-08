@@ -440,7 +440,7 @@ func runSub(ri *RunData, beQuiet bool, topicStub string) {
 			BrokerUser: "",
 			BrokerPass: "",
 			SubTopic:   topic, // will be numbered + AP'ed
-			AP:         "test/benchmarking/subscribe",
+			AP:         "benchmarking/subscribe",
 			MsgSize:    ri.MessageSize,
 			MsgCount:   ri.MessageCount,
 			SubQoS:     byte(ri.PubQoS),
