@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"log"
 	"strconv"
@@ -95,7 +94,6 @@ func (c *ResBenchClient) pubMessages(in, out chan *Message, doneGen, donePub cha
 			select {
 			case m := <-in:
 				m.Sent = time.Now()
-				m.Payload = bytes.Join([][]byte{[]byte(strconv.FormatInt(m.Sent.UnixNano(), 10)), make([]byte, c.MsgSize)}, []byte("#@#"))
 				token := client.Publish(m.Topic, m.QoS, false, m.Payload)
 				token.Wait()
 				if token.Error() != nil {
