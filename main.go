@@ -197,7 +197,7 @@ func main() {
 
 	if *modesString == "" { // use default mode list for given awareness
 		if *aware {
-			resNums = []int{0,1000,10000} // 10000, 0, 1000}
+			resNums = []int{0, 1000, 10000} // 10000, 0, 1000}
 		} else {
 			resNums = []int{0}
 		}
@@ -337,19 +337,19 @@ func run(ri *RunData, beQuiet bool) {
 		time.Sleep(500 * time.Millisecond)
 		mc.Disconnect()
 
-		// run depending on action
-		switch ri.Action {
-
-		case "reserve":
-			runRes(ri, beQuiet, topicStub)
-		case "subscribe":
-			runSub(ri, beQuiet, topicStub)
-		default:
-			ri.Action = "pubsub"
-			runPubSub(ri, beQuiet, topicStub)
-		}
 	}
 
+	// run depending on action
+	switch ri.Action {
+
+	case "reserve":
+		runRes(ri, beQuiet, topicStub)
+	case "subscribe":
+		runSub(ri, beQuiet, topicStub)
+	default:
+		ri.Action = "pubsub"
+		runPubSub(ri, beQuiet, topicStub)
+	}
 }
 
 func runRes(ri *RunData, beQuiet bool, topicStub string) {
