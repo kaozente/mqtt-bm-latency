@@ -304,6 +304,8 @@ func run(ri *RunData, beQuiet bool) {
 		log.Printf("Setting mode to %s \n", ri.Mode)
 	}
 
+	var mc *PurposeClient
+
 	if ri.Aware {
 
 		defer func() {
@@ -313,11 +315,15 @@ func run(ri *RunData, beQuiet bool) {
 			}
 		}()
 
-		mc := CreatePurposeClient(ri.Server, beQuiet)
+		mc = CreatePurposeClient(ri.Server, beQuiet)
 		mc.SetMode(ri.Mode)
 		mc.Reset()
 
-		mc.MakeReservations(ri.NumberOfReservations)
+		if ri.Action == "reserve" {
+			mc.MakeSubscriptions(ri.NumberOfReservations)
+		} else {
+			mc.MakeReservations(ri.NumberOfReservations)
+		}
 
 		aip := PurposeSet{
 			aip: []string{"research", "benchmarking"},
@@ -335,7 +341,6 @@ func run(ri *RunData, beQuiet bool) {
 			mc.Reserve(topicStub+"HASH", aip)
 		}
 		time.Sleep(500 * time.Millisecond)
-		mc.Disconnect()
 
 	}
 
@@ -349,6 +354,10 @@ func run(ri *RunData, beQuiet bool) {
 	default:
 		ri.Action = "pubsub"
 		runPubSub(ri, beQuiet, topicStub)
+	}
+
+	if mc != nil {
+		mc.Disconnect()
 	}
 }
 

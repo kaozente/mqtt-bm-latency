@@ -68,6 +68,19 @@ func (pc *PurposeClient) MakeReservations(nres int) {
 	}
 }
 
+func (pc *PurposeClient) MakeSubscriptions(nsub int) {
+
+	ap := "testing/subs"
+
+	for i := 0; i < nsub; i++ {
+		// use  a hash reservation to make trigger advanced lookup
+		topic :=  fmt.Sprintf("!AP/%s/%d/HASH{%s}", "!AP/subs/%d{%s}", i, ap)
+		subToken := pc.mqttClient.Subscribe(topic, 0, nil)
+		subToken.Wait()
+	}
+
+}
+
 func packPurposes(aip PurposeSet) string {
 	return fmt.Sprintf("{%s|%s}",
 		strings.Join(aip.aip, ","),
